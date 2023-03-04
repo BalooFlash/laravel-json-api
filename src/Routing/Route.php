@@ -15,289 +15,340 @@
  * limitations under the License.
  */
 
-declare(strict_types=1);
+namespace CloudCreativity\LaravelJsonApi\Routing;
 
-namespace LaravelJsonApi\Laravel\Routing;
-
-use Illuminate\Contracts\Container\Container;
+use CloudCreativity\LaravelJsonApi\Codec\Codec;
+use CloudCreativity\LaravelJsonApi\Contracts\Queue\AsynchronousProcess;
+use CloudCreativity\LaravelJsonApi\Contracts\Resolver\ResolverInterface;
+use CloudCreativity\LaravelJsonApi\Contracts\Store\StoreInterface;
+use CloudCreativity\LaravelJsonApi\Exceptions\ResourceNotFoundException;
+use CloudCreativity\LaravelJsonApi\Exceptions\RuntimeException;
 use Illuminate\Routing\Route as IlluminateRoute;
-use Illuminate\Support\Traits\ForwardsCalls;
-use LaravelJsonApi\Contracts\Auth\Authorizer;
-use LaravelJsonApi\Contracts\Routing\Route as RouteContract;
-use LaravelJsonApi\Contracts\Schema\Relation;
-use LaravelJsonApi\Contracts\Schema\Schema;
-use LaravelJsonApi\Contracts\Server\Server;
-use LaravelJsonApi\Core\Document\ResourceIdentifier;
-use LogicException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
-class Route implements RouteContract
+/**
+ * Class Route
+ *
+ * @package CloudCreativity\LaravelJsonApi
+ */
+class Route
 {
-
-    public const RESOURCE_TYPE = 'resource_type';
-    public const RESOURCE_ID_NAME = 'resource_id_name';
-    public const RESOURCE_RELATIONSHIP = 'resource_relationship';
-
-    use ForwardsCalls;
-
-    /**
-     * @var Container
-     */
-    private Container $container;
-
-    /**
-     * @var Server
-     */
-    private Server $server;
 
     /**
      * @var IlluminateRoute
      */
-    private IlluminateRoute $route;
+    private $route;
+
+    /**
+     * @var ResolverInterface
+     */
+    private $resolver;
+
+    /**
+     * @var string|null
+     */
+    private $resourceId;
+
+    /**
+     * @var string|null
+     */
+    private $processId;
+
+    /**
+     * @var Codec|null
+     */
+    private $codec;
 
     /**
      * Route constructor.
      *
-     * @param Container $container
-     * @param Server $server
-     * @param IlluminateRoute $route
+     * @param ResolverInterface $resolver
+     * @param IlluminateRoute|null $route
+     *      the route, if one was successfully matched.
      */
-    public function __construct(Container $container, Server $server, IlluminateRoute $route)
+    public function __construct(ResolverInterface $resolver, ?IlluminateRoute $route)
     {
-        $this->container = $container;
-        $this->server = $server;
+        $this->resolver = $resolver;
         $this->route = $route;
     }
 
     /**
-     * @param $name
-     * @param $arguments
-     * @return mixed
-     */
-    public function __call($name, $arguments)
-    {
-        return $this->forwardCallTo($this->route, $name, $arguments);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function resourceType(): string
-    {
-        if ($type = $this->route->parameter(self::RESOURCE_TYPE)) {
-            return $type;
-        }
-
-        throw new LogicException('No JSON API resource type set on route.');
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function modelOrResourceId()
-    {
-        if (!$name = $this->resourceIdName()) {
-            throw new LogicException('No JSON API resource id name set on route.');
-        }
-
-        $modelOrResourceId = $this->route->parameter($name);
-
-        if (!is_object($modelOrResourceId) && ResourceIdentifier::idIsEmpty($modelOrResourceId)) {
-            throw new LogicException('No JSON API resource id set on route.');
-        }
-
-        return $modelOrResourceId;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function resourceId(): string
-    {
-        $modelOrResourceId = $this->modelOrResourceId();
-
-        if (is_object($modelOrResourceId)) {
-            return $this->server
-                ->resources()
-                ->create($modelOrResourceId)
-                ->id();
-        }
-
-        return $modelOrResourceId;
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function hasResourceId(): bool
-    {
-        return !empty($this->resourceIdName());
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function model(): object
-    {
-        $modelOrResourceId = $this->modelOrResourceId();
-
-        if (is_object($modelOrResourceId)) {
-            return $modelOrResourceId;
-        }
-
-        throw new LogicException('Expecting bindings to be substituted.');
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function fieldName(): string
-    {
-        if ($name = $this->route->parameter(self::RESOURCE_RELATIONSHIP)) {
-            return $name;
-        }
-
-        throw new LogicException('No JSON API relationship name set on route.');
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function schema(): Schema
-    {
-        return $this->server->schemas()->schemaFor(
-            $this->resourceType()
-        );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function authorizer(): Authorizer
-    {
-        return $this->container->make(
-            $this->schema()->authorizer()
-        );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function hasRelation(): bool
-    {
-        return !!$this->route->parameter(self::RESOURCE_RELATIONSHIP);
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function inverse(): Schema
-    {
-        return $this->server->schemas()->schemaFor(
-            $this->relation()->inverse()
-        );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function relation(): Relation
-    {
-        return $this->schema()->relationship(
-            $this->fieldName()
-        );
-    }
-
-    /**
-     * @inheritDoc
-     */
-    public function substituteBindings(): void
-    {
-        if ($this->hasSubstitutedBindings()) {
-            $this->checkBinding();
-            return;
-        }
-
-        if ($this->hasResourceId()) {
-            $this->setModel($this->schema()->repository()->find(
-                $this->resourceId()
-            ));
-        }
-    }
-
-    /**
-     * Has the model binding already been substituted?
+     * Substitute the route bindings onto the Laravel route.
      *
-     * In a normal Laravel application setup, the `api` middleware group will
-     * include Laravel's binding substitution middleware. This means that
-     * typically the boot JSON:API middleware will run *after* bindings have been
-     * substituted.
+     * @param StoreInterface $store
+     * @return void
+     * @throws ResourceNotFoundException
+     */
+    public function substituteBindings(StoreInterface $store): void
+    {
+        /** Cache the ID values so that we still have access to them. */
+        $tempResourceId = $this->getResourceId();
+        $tempProcessId = $this->getProcessId();
+        $this->resourceId = isset($tempResourceId) ? $tempResourceId : false;
+        $this->processId = isset($tempProcessId) ? $tempProcessId : false;
+
+        /** Bind the domain record. */
+        if (!empty($this->resourceId) || '0' === $this->resourceId) {
+            $this->route->setParameter(
+                ResourceRegistrar::PARAM_RESOURCE_ID,
+                $store->findOrFail($this->getResourceType(), $this->resourceId)
+            );
+        }
+
+        /** Bind the async process. */
+        if (!empty($this->processId) || '0' === $this->processId) {
+            $this->route->setParameter(
+                ResourceRegistrar::PARAM_PROCESS_ID,
+                $store->findOrFail($this->getProcessType(), $this->processId)
+            );
+        }
+    }
+
+    /**
+     * Set the matched codec.
      *
-     * If the route that is being executed has type-hinted the model, this means
-     * the model will already be substituted into the route. For example, this
-     * can occur if the developer has written their own controller action, or
-     * for custom actions.
+     * @param Codec $codec
+     * @return $this
+     */
+    public function setCodec(Codec $codec): self
+    {
+        $this->codec = $codec;
+
+        return $this;
+    }
+
+    /**
+     * Get the matched codec.
      *
+     * @return Codec
+     */
+    public function getCodec(): Codec
+    {
+        if (!$this->hasCodec()) {
+            throw new RuntimeException('Codec cannot be obtained before content negotiation.');
+        }
+
+        return $this->codec;
+    }
+
+    /**
      * @return bool
      */
-    private function hasSubstitutedBindings(): bool
+    public function hasCodec(): bool
     {
-        if ($name = $this->resourceIdName()) {
-            $expected = $this->schema()->model();
-            return $this->route->parameter($name) instanceof $expected;
-        }
-
-        return false;
+        return !!$this->codec;
     }
 
     /**
-     * @param object|null $model
-     * @return void
-     * @throws NotFoundHttpException
-     */
-    private function setModel(?object $model): void
-    {
-        if ($model) {
-            $this->route->setParameter(
-                $this->resourceIdName(),
-                $model
-            );
-            return;
-        }
-
-        throw new NotFoundHttpException();
-    }
-
-    /**
-     * Check the model that has already been substituted.
+     * Get the domain record type for the route.
      *
-     * If Laravel has substituted bindings before the JSON:API binding substitution
-     * is triggered, we need to check that the model that has been set on the route
-     * by Laravel does exist in our API. This is because the API's existence logic
-     * may not match the route binding query that Laravel executed to substitute
-     * the binding. E.g. if the developer has applied global scopes in the Server's
-     * `serving()` method, these global scopes may have been applied *after* the
-     * binding was substituted.
+     * For routes that support polymorphic types, the first PHP type that is
+     * registered will be returned.
      *
-     * @return void
+     * @return string
+     * @deprecated 2.0 use `getTypes()` as some routes may support polymorphic types.
      */
-    private function checkBinding(): void
+    public function getType(): string
     {
-        $resourceId = $this->server->resources()->create(
-            $this->model(),
-        )->id();
+        $type = $this->getTypes()[0] ?? null;
 
-        if (!$this->schema()->repository()->exists($resourceId)) {
-            throw new NotFoundHttpException();
+        if (!$type) {
+            throw new RuntimeException('Expecting at least one PHP type.');
         }
+
+        return $type;
     }
 
     /**
+     * Get the domain record types for the route.
+     *
+     * As some routes support polymorphic types, this method returns an array of PHP types.
+     *
+     * @return string[]
+     */
+    public function getTypes(): array
+    {
+        /** If we have resolved a specific record for the route, we know the exact class. */
+        if ($resource = $this->getResource()) {
+            return [get_class($resource)];
+        }
+
+        $resourceType = $this->getResourceType();
+
+        if (!$type = $this->resolver->getType($resourceType)) {
+            throw new RuntimeException("JSON API resource type {$resourceType} is not registered.");
+        }
+
+        return (array) $type;
+    }
+
+    /**
+     * What is the resource type of the route?
+     *
+     * @return string|null
+     *      the resource type
+     */
+    public function getResourceType(): ?string
+    {
+        return $this->parameter(ResourceRegistrar::PARAM_RESOURCE_TYPE);
+    }
+
+    /**
+     * What is the resource id of the route?
+     *
      * @return string|null
      */
-    private function resourceIdName(): ?string
+    public function getResourceId(): ?string
     {
-        return $this->route->parameter(self::RESOURCE_ID_NAME) ?: null;
+        if (is_null($this->resourceId)) {
+            return $this->parameter(ResourceRegistrar::PARAM_RESOURCE_ID);
+        }
+
+        return $this->resourceId ?: null;
+    }
+
+    /**
+     * Get the domain object binding for the route.
+     *
+     * @return mixed|null
+     */
+    public function getResource()
+    {
+        $resource = $this->parameter(ResourceRegistrar::PARAM_RESOURCE_ID);
+
+        return is_object($resource) ? $resource : null;
+    }
+
+    /**
+     * Get the relationship name for the route.
+     *
+     * @return string|null
+     */
+    public function getRelationshipName(): ?string
+    {
+        return $this->parameter(ResourceRegistrar::PARAM_RELATIONSHIP_NAME);
+    }
+
+    /**
+     * Get the the inverse resource type for the route.
+     *
+     * For example, a `GET /posts/1/author`, the string returned by this method
+     * would be `users` if the related author is a `users` JSON API resource type.
+     *
+     * @return string|null
+     */
+    public function getInverseResourceType(): ?string
+    {
+        return $this->parameter(ResourceRegistrar::PARAM_RELATIONSHIP_INVERSE_TYPE);
+    }
+
+    /**
+     * Get the process resource type for the route.
+     *
+     * @return string|null
+     */
+    public function getProcessType(): ?string
+    {
+        return $this->parameter(ResourceRegistrar::PARAM_PROCESS_TYPE);
+    }
+
+    /**
+     * Get the process id for the route.
+     *
+     * @return string|null
+     */
+    public function getProcessId(): ?string
+    {
+        if (is_null($this->processId)) {
+            return $this->parameter(ResourceRegistrar::PARAM_PROCESS_ID);
+        }
+
+        return $this->processId ?: null;
+    }
+
+    /**
+     * Get the process binding for the route.
+     *
+     * @return AsynchronousProcess|null
+     */
+    public function getProcess(): ?AsynchronousProcess
+    {
+        $process = $this->parameter(ResourceRegistrar::PARAM_PROCESS_ID);
+
+        return ($process instanceof AsynchronousProcess) ? $process : null;
+    }
+
+    /**
+     * @return bool
+     */
+    public function isResource(): bool
+    {
+        return !empty($this->getResourceId());
+    }
+
+    /**
+     * @return bool
+     */
+    public function isNotResource(): bool
+    {
+        return !$this->isResource();
+    }
+
+    /**
+     * @return bool
+     */
+    public function isRelationship(): bool
+    {
+        return !empty($this->getRelationshipName());
+    }
+
+    /**
+     * @return bool
+     */
+    public function isNotRelationship(): bool
+    {
+        return !$this->isRelationship();
+    }
+
+    /**
+     * @return bool
+     */
+    public function isProcesses(): bool
+    {
+        return !empty($this->getProcessType());
+    }
+
+    /**
+     * @return bool
+     */
+    public function isNotProcesses(): bool
+    {
+        return !$this->isProcesses();
+    }
+
+    /**
+     * @return bool
+     */
+    public function isProcess(): bool
+    {
+        return !empty($this->getProcessId());
+    }
+
+    /**
+     * @return bool
+     */
+    public function isNotProcess(): bool
+    {
+        return !$this->isProcess();
+    }
+
+    /**
+     * @param string $name
+     * @param mixed $default
+     * @return mixed
+     */
+    private function parameter(string $name, $default = null)
+    {
+        return $this->route ? $this->route->parameter($name, $default) : null;
     }
 
 }

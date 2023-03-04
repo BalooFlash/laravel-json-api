@@ -15,31 +15,53 @@
  * limitations under the License.
  */
 
-namespace App\Providers;
+namespace DummyApp\Providers;
 
-use Carbon\CarbonImmutable;
-use Illuminate\Support\Facades\Date;
+use CloudCreativity\LaravelJsonApi\LaravelJsonApi;
+use DummyApp\Entities\SiteRepository;
+use DummyApp\Policies\PostPolicy;
+use DummyApp\Policies\UserPolicy;
+use DummyApp\Post;
+use DummyApp\User;
+use Illuminate\Database\Eloquent\Factory as ModelFactory;
+use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
 {
-    /**
-     * Register any application services.
-     *
-     * @return void
-     */
-    public function register()
-    {
-        Date::use(CarbonImmutable::class);
-    }
 
     /**
-     * Bootstrap any application services.
-     *
      * @return void
      */
     public function boot()
     {
-        config()->set('jsonapi', require __DIR__ . '/../../config/jsonapi.php');
+        config()->set([
+            'database.default' => 'testbench',
+            'database.connections.testbench' => [
+                'driver' => 'sqlite',
+                'database' => ':memory:',
+                'prefix' => '',
+            ],
+            'json-api-v1' => require __DIR__ . '/../../config/json-api-v1.php',
+            'auth.providers.users.model' => User::class,
+        ]);
+
+        $this->loadMigrationsFrom(__DIR__ . '/../../database/migrations');
+        $this->app->make(ModelFactory::class)->load(__DIR__ . '/../../database/factories');
+
+        Gate::policy(Post::class, PostPolicy::class);
+        Gate::policy(User::class, UserPolicy::class);
+
+        LaravelJsonApi::defaultApi('v1');
     }
+
+    /**
+     * @return void
+     */
+    public function register()
+    {
+        LaravelJsonApi::runMigrations();
+        $this->app->singleton(SiteRepository::class);
+    }
+
 }

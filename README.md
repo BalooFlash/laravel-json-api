@@ -1,132 +1,110 @@
-![Tests](https://github.com/laravel-json-api/laravel/workflows/Tests/badge.svg)
+![Tests](https://github.com/cloudcreativity/laravel-json-api/workflows/Tests/badge.svg)
 
-# JSON:API for Web Artisans
+# cloudcreativity/laravel-json-api
 
-Implement feature-rich [JSON:API](https://jsonapi.org) compliant APIs in your
-[Laravel](https://laravel.com) applications. Build your next standards-compliant API today.
+## Status
 
-## Why use JSON:API and Laravel JSON:API?
+**DO NOT USE THIS PACKAGE FOR NEW PROJECTS - USE [laravel-json-api/laravel](https://github.com/laravel-json-api/laravel)
+INSTEAD.**
 
-Great question! [Here's some reasons from this excellent article by Denisa Halmaghi](https://graffino.com/web-development/how-to-use-laravel-json-api-to-create-a-json-api-compliant-backend-in-laravel):
+This package has now been rewritten, substantially improved and released as the `laravel-json-api/laravel` package.
+Documentation for the new version is available on our new website [laraveljsonapi.io](https://laraveljsonapi.io) and the
+code is now developed under the
+[Laravel JSON:API Github organisation.](https://github.com/laravel-json-api)
 
-### Why Use JSON:API?
+The `cloudcreativity/laravel-json-api` package is now considered to be the *legacy* package. As we know it is in use in
+a lot of production applications, it will continue to receive bug fixes and updates for new Laravel versions. However,
+it is no longer supported for new features.
 
-- Standardised, consistent APIs.
-- Feature rich - some of which are: sparse fieldsets (only fetch the fields you need), filtering, sorting, pagination,
-  eager loading for relationships (includes, which solve the _N+1_ problem).
-- Easy to understand.
+If you are starting a new project, you MUST use the
+[new package `laravel-json-api/laravel`.](https://github.com/laravel-json-api/laravel)
 
-### Why use Laravel JSON:API?
+## Introduction
 
-- Saves a lot of development time.
-- Highly maintainable code.
-- Great, extensive documentation.
-- Strong conventions, but also highly customisable.
-- Makes use of native Laravel features such as policies and form requests to make the shift easier for developers.
-- Beautiful, expressive Nova-style schemas.
-- Fully testable via expressive test helpers.
+Build feature-rich and standards-compliant APIs in Laravel.
 
-```php
-class PostSchema extends Schema
-{
+This package provides all the capabilities you need to add [JSON API](http://jsonapi.org)
+compliant APIs to your application. Extensive support for the specification, including:
 
-    /**
-     * The model the schema corresponds to.
-     *
-     * @var string
-     */
-    public static string $model = Post::class;
+- Fetching resources
+- Fetching relationships
+- Inclusion of related resources (compound documents)
+- Sparse fieldsets.
+- Sorting.
+- Pagination.
+- Filtering
+- Creating resources.
+- Updating resources.
+- Updating relationships.
+- Deleting resources.
+- Validation of:
+  - JSON API documents; and
+  - Query parameters.
 
-    /**
-     * The maximum include path depth.
-     *
-     * @var int
-     */
-    protected int $maxDepth = 3;
+The following additional features are also supported:
 
-    /**
-     * Get the resource fields.
-     *
-     * @return array
-     */
-    public function fields(): array
-    {
-        return [
-            ID::make(),
-            BelongsTo::make('author')->type('users')->readOnly(),
-            HasMany::make('comments')->readOnly(),
-            Str::make('content'),
-            DateTime::make('createdAt')->sortable()->readOnly(),
-            DateTime::make('publishedAt')->sortable(),
-            Str::make('slug'),
-            BelongsToMany::make('tags'),
-            Str::make('title')->sortable(),
-            DateTime::make('updatedAt')->sortable()->readOnly(),
-        ];
-    }
+- Full support for Eloquent resources, with features such as:
+  - Automatic eager loading when including related resources.
+  - Easy relationship end-points.
+  - Soft-deleting and restoring Eloquent resources.
+  - Page and cursor based pagination.
+- Asynchronous processing.
+- Support multiple media-types within your API.
+- Generators for all the classes you need to add a resource to your API.
 
-    /**
-     * Get the resource filters.
-     *
-     * @return array
-     */
-    public function filters(): array
-    {
-        return [
-            WhereIdIn::make($this),
-            WhereIn::make('author', 'author_id'),
-        ];
-    }
+### What is JSON API?
 
-    /**
-     * Get the resource paginator.
-     *
-     * @return Paginator|null
-     */
-    public function pagination(): ?Paginator
-    {
-        return PagePagination::make();
-    }
-}
-```
+From [jsonapi.org](http://jsonapi.org)
+
+> If you've ever argued with your team about the way your JSON responses should be formatted, JSON API is your
+> anti-bikeshedding weapon.
+>
+> By following shared conventions, you can increase productivity, take advantage of generalized tooling, and focus on
+> what matters: your application. Clients built around JSON API are able to take advantage of its features around
+> efficiently caching responses, sometimes eliminating network requests entirely.
+
+For full information on the spec, plus examples, see [http://jsonapi.org](http://jsonapi.org).
 
 ## Documentation
 
-See our website, [laraveljsonapi.io](https://laraveljsonapi.io)
+Full package documentation is available on
+[Read the Docs](http://laravel-json-api.readthedocs.io/en/latest/).
 
-### Tutorial
+## Slack
 
-New to JSON:API and/or Laravel JSON:API? Then
-the [Laravel JSON:API tutorial](https://laraveljsonapi.io/docs/2.0/tutorial/)
-is a great way to learn!
+Join the Laravel JSON:API community on
+[Slack.](https://join.slack.com/t/laraveljsonapi/shared_invite/zt-e3oi2r4y-8nkmhzpKnPQViaXrkPJHtQ)
 
-Follow the tutorial to build a blog application with a JSON:API compliant API.
+## Laravel Versions
 
-## Installation
+| Laravel | This Package |
+| --- | --- |
+| `^9.0` | `^4.0` |
+| `^8.0` | `^3.0|^4.0` |
+| `^7.0` | `^2.0` |
+| `^6.0` | `^1.7` |
+| `5.8.*` | `^1.7` |
+| `5.7.*` | `^1.0` |
+| `5.6.*` | `^1.0` |
+| `5.5.*` | `^1.0` |
 
-Install using [Composer](https://getcomposer.org)
-
-```bash
-composer require laravel-json-api/laravel
-```
-
-See our documentation for further installation instructions.
-
-## Upgrading
-
-When upgrading you typically want to upgrade this package and all our related packages. This is the recommended way:
-
-```bash
-composer require laravel-json-api/laravel --no-update
-composer require laravel-json-api/testing --dev --no-update
-composer up "laravel-json-api/*" cloudcreativity/json-api-testing
-```
-
-## Example Application
-
-To view an example Laravel application that uses this package, see the
-[Tutorial Application](https://github.com/laravel-json-api/tutorial-app).
+Make sure you consult the [Upgrade Guide](http://laravel-json-api.readthedocs.io/en/latest/upgrade/)
+when upgrading between major or pre-release versions.
 
 ## License
 
-Laravel JSON:API is open-sourced software licensed under the [Apache 2.0 License](./LICENSE).
+Apache License (Version 2.0). Please see [License File](LICENSE) for more information.
+
+## Installation
+
+Installation is via `composer`. See the documentation for complete instructions.
+
+## Contributing
+
+Contributions are absolutely welcome. Ideally submit a pull request, even more ideally with unit tests. Please note the
+following:
+
+- **Bug Fixes** - submit a pull request against the `master` branch.
+- **Enhancements / New Features** - submit a pull request against the `develop` branch.
+
+We recommend submitting an issue before taking the time to put together a pull request.

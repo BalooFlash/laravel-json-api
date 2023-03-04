@@ -1,68 +1,75 @@
 {
-    "name": "laravel-json-api/laravel",
-    "description": "JSON:API for Laravel applications.",
+    "name": "cloudcreativity/laravel-json-api",
+    "description": "JSON API (jsonapi.org) support for Laravel applications.",
     "keywords": [
         "jsonapi.org",
         "json-api",
         "jsonapi",
+        "cloudcreativity",
+        "json",
+        "api",
         "laravel"
     ],
-    "homepage": "https://github.com/laravel-json-api/laravel",
+    "homepage": "https://github.com/cloudcreativity/laravel-json-api",
     "support": {
-        "issues": "https://github.com/laravel-json-api/laravel/issues"
+        "issues": "https://github.com/cloudcreativity/laravel-json-api/issues"
     },
     "license": "Apache-2.0",
     "authors": [
         {
             "name": "Cloud Creativity Ltd",
             "email": "info@cloudcreativity.co.uk"
-        },
-        {
-            "name": "Christopher Gammie",
-            "email": "contact@gammie.co.uk"
         }
     ],
     "require": {
         "php": "^8.1",
         "ext-json": "*",
-        "laravel-json-api/core": "^3.0",
-        "laravel-json-api/eloquent": "^3.0",
-        "laravel-json-api/encoder-neomerx": "^3.0",
-        "laravel-json-api/exceptions": "^2.0",
-        "laravel-json-api/spec": "^2.0",
-        "laravel-json-api/validation": "^3.0",
-        "laravel/framework": "^10.0"
+        "laravel-json-api/neomerx-json-api": "^5.0.1",
+        "laravel/framework": "^10.0",
+        "nyholm/psr7": "^1.2",
+        "ramsey/uuid": "^4.0",
+        "symfony/psr-http-message-bridge": "^2.0"
     },
     "require-dev": {
-        "laravel-json-api/testing": "^2.1",
+        "ext-sqlite3": "*",
+        "guzzlehttp/guzzle": "^7.0",
+        "laravel-json-api/testing": "^2.0",
+        "laravel/legacy-factories": "^1.0.4",
+        "laravel/ui": "^4.2",
+        "mockery/mockery": "^1.1",
         "orchestra/testbench": "^8.0",
-        "phpunit/phpunit": "^10.0"
+        "phpunit/phpunit": "^9.5.28"
+    },
+    "suggest": {
+        "cloudcreativity/json-api-testing": "Required to use the test helpers."
     },
     "autoload": {
         "psr-4": {
-            "LaravelJsonApi\\Laravel\\": "src/"
-        }
+            "CloudCreativity\\LaravelJsonApi\\": "src/"
+        },
+        "files": [
+            "helpers.php"
+        ]
     },
     "autoload-dev": {
         "psr-4": {
-            "App\\":  "tests/dummy/app",
-            "App\\Tests\\": "tests/dummy/tests",
-            "Database\\Factories\\": "tests/dummy/database/factories",
-            "LaravelJsonApi\\Laravel\\Tests\\": "tests/lib"
+            "CloudCreativity\\LaravelJsonApi\\Tests\\": "tests/lib",
+            "DummyApp\\": "tests/dummy/app",
+            "DummyApp\\Tests\\": "tests/dummy/tests",
+            "DummyPackage\\": "tests/package/src"
         }
     },
     "extra": {
         "branch-alias": {
-            "dev-develop": "3.x-dev"
+            "dev-develop": "5.x-dev"
         },
         "laravel": {
-            "aliases": {
-                "JsonApi": "LaravelJsonApi\\Core\\Facades\\JsonApi",
-                "JsonApiRoute": "LaravelJsonApi\\Laravel\\Facades\\JsonApiRoute"
-            },
             "providers": [
-                "LaravelJsonApi\\Laravel\\ServiceProvider"
-            ]
+                "CloudCreativity\\LaravelJsonApi\\ServiceProvider"
+            ],
+            "aliases": {
+                "JsonApi": "CloudCreativity\\LaravelJsonApi\\Facades\\JsonApi"
+            }
         }
     },
     "minimum-stability": "stable",

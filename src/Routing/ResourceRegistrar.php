@@ -15,464 +15,312 @@
  * limitations under the License.
  */
 
-declare(strict_types=1);
+namespace CloudCreativity\LaravelJsonApi\Routing;
 
-namespace LaravelJsonApi\Laravel\Routing;
+use Illuminate\Contracts\Routing\Registrar;
+use Illuminate\Routing\Route;
+use Illuminate\Support\Str;
+use Ramsey\Uuid\Uuid;
 
-use Closure;
-use Illuminate\Contracts\Routing\Registrar as RegistrarContract;
-use Illuminate\Routing\Route as IlluminateRoute;
-use Illuminate\Routing\RouteCollection;
-use LaravelJsonApi\Contracts\Server\Server;
-use LaravelJsonApi\Core\Support\Str;
-
-class ResourceRegistrar
+/**
+ * Class ResourceRegistrar
+ *
+ * @package CloudCreativity\LaravelJsonApi
+ */
+final class ResourceRegistrar
 {
 
-    /**
-     * @var RegistrarContract
-     */
-    private RegistrarContract $router;
+    const KEYWORD_RELATIONSHIPS = 'relationships';
+    const KEYWORD_PROCESSES = 'queue-jobs';
+    const PARAM_RESOURCE_TYPE = 'resource_type';
+    const PARAM_RESOURCE_ID = 'record';
+    const PARAM_RELATIONSHIP_NAME = 'relationship_name';
+    const PARAM_RELATIONSHIP_INVERSE_TYPE = 'relationship_inverse_type';
+    const PARAM_PROCESS_TYPE = 'process_type';
+    const PARAM_PROCESS_ID = 'process';
+
+    const METHODS = [
+        'index' => 'get',
+        'create' => 'post',
+        'read' => 'get',
+        'update' => 'patch',
+        'delete' => 'delete',
+    ];
+
+    use RegistersResources;
 
     /**
-     * @var Server
+     * @var \Closure|null
      */
-    private Server $server;
+    private $group;
 
     /**
-     * ResourceRegistrar constructor.
+     * ResourceGroup constructor.
      *
-     * @param RegistrarContract $router
-     * @param Server $server
+     * @param Registrar $router
+     * @param string $resourceType
+     * @param array $options
+     * @param \Closure|null $group
      */
-    public function __construct(RegistrarContract $router, Server $server)
+    public function __construct(Registrar $router, string $resourceType, array $options = [], \Closure $group = null)
     {
         $this->router = $router;
-        $this->server = $server;
+        $this->resourceType = $resourceType;
+        $this->options = $options;
+        $this->group = $group;
     }
 
     /**
-     * Start to register resource routes.
-     *
-     * @param string $resourceType
-     * @param string|null $controller
-     * @return PendingResourceRegistration
+     * @return void
      */
-    public function resource(string $resourceType, string $controller = null): PendingResourceRegistration
+    public function register(): void
     {
-        return new PendingResourceRegistration(
-            $this,
-            $resourceType,
-            $controller ?: $this->guessController($resourceType)
-        );
-    }
+        $this->router->group($this->attributes(), function () {
+            /** Custom routes */
+            $this->registerCustom();
 
-    /**
-     * Register resource relationship routes.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @param Closure $callback
-     * @return RouteCollection
-     */
-    public function relationships(
-        string $resourceType,
-        string $controller,
-        array $options,
-        Closure $callback
-    ): RouteCollection
-    {
-        $parameter = $this->getResourceParameterName($resourceType, $options);
-        $attributes = $this->getRelationshipsAction($resourceType, $parameter, $options);
-
-        $registrar = new RelationshipRegistrar(
-            $this->router,
-            $this->server->schemas()->schemaFor($resourceType),
-            $resourceType,
-            $controller,
-            $parameter,
-        );
-
-        $routes = new RouteCollection();
-
-        $this->router->group($attributes, function () use ($registrar, $callback, $routes) {
-            $relationships = new Relationships($registrar);
-
-            $callback($relationships, $this->router);
-
-            foreach ($relationships->register() as $route) {
-                $routes->add($route);
+            /** Async process routes */
+            if ($this->hasAsync()) {
+                $this->registerProcesses();
             }
-        });
 
-        return $routes;
+            /** Primary resource routes. */
+            $this->router->group([], function () {
+                $this->registerResource();
+            });
+
+            /** Resource relationship routes */
+            $this->registerRelationships();
+        });
     }
 
     /**
-     * Register resource custom actions.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @param string|null $prefix
-     * @param Closure $callback
-     * @return RouteCollection
+     * @return void
      */
-    public function actions(
-        string $resourceType,
-        string $controller,
-        array $options,
-        ?string $prefix,
-        Closure $callback
-    ): RouteCollection
+    private function registerResource(): void
     {
-        $attributes = $this->getCustomActions($resourceType, $options);
+        foreach ($this->resourceActions() as $action) {
+            $this->routeForResource($action);
+        }
+    }
 
-        $actions = new ActionRegistrar(
-            $this->router,
-            $this,
-            $routes = new RouteCollection(),
-            $resourceType,
-            $options,
-            $controller,
-            $prefix
+    /**
+     * @return void
+     */
+    private function registerRelationships(): void
+    {
+        (new RelationshipsRegistrar($this->router, $this->resourceType, $this->options))
+            ->register();
+    }
+
+    /**
+     * Register custom routes.
+     *
+     * @return void
+     */
+    public function registerCustom(): void
+    {
+        if (!$fn = $this->group) {
+            return;
+        }
+
+        $this->router->group([], function () use ($fn) {
+            $fn(new RouteRegistrar(
+                $this->router,
+                ['controller' => $this->controller()],
+                [self::PARAM_RESOURCE_TYPE => $this->resourceType]
+            ));
+        });
+    }
+
+    /**
+     * Add routes for async processes.
+     *
+     * @return void
+     */
+    private function registerProcesses(): void
+    {
+        $this->routeForProcess(
+            'get',
+            $this->baseProcessUrl(),
+            $this->actionForRoute('processes')
         );
 
-        $this->router->group($attributes, function () use ($actions, $callback) {
-            $callback($actions, $this->router);
-        });
-
-        return $routes;
+        $this->routeForProcess(
+            'get',
+            $this->processUrl(),
+            $this->actionForRoute('process')
+        );
     }
 
     /**
-     * Register resource routes.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return RouteCollection
-     */
-    public function register(string $resourceType, string $controller, array $options = []): RouteCollection
-    {
-        $routes = new RouteCollection();
-
-        foreach ($this->getResourceMethods($options) as $method) {
-            $fn = 'addResource' . ucfirst($method);
-            $route = $this->{$fn}($resourceType, $controller, $options);
-            $routes->add($route);
-        }
-
-        return $routes;
-    }
-
-    /**
-     * @param string $resourceType
-     * @param array $options
      * @return string
      */
-    public function getResourceParameterName(string $resourceType, array $options): string
+    private function contentNegotiation(): string
     {
-        if (isset($options['parameter'])) {
-            return $options['parameter'];
-        }
+        $cn = $this->options['content-negotiator'] ?? null;
 
-        $param = Str::singular($resourceType);
-
-        /**
-         * Dash-case is not allowed for route parameters. Therefore if the
-         * resource type contains a dash, we will underscore it.
-         */
-        if (Str::contains($param, '-')) {
-            $param = Str::underscore($param);
-        }
-
-        return $param;
+        return $cn ? "json-api.content:{$cn}" : 'json-api.content';
     }
 
     /**
-     * @param string $resourceType
-     * @param string|null $parameter
-     * @param array $options
      * @return array
      */
-    public function getWheres(string $resourceType, ?string $parameter, array $options): array
+    private function attributes(): array
     {
-        $where = $options['wheres'] ?? [];
+        $prefix = $this->options['resource_uri'] ?? $this->resourceType;
 
-        if ($parameter && !isset($action['where'][$parameter])) {
-            $where[$parameter] = $this->getIdPattern($resourceType);
-        }
-
-        return $where;
+        return [
+            'middleware' => $this->middleware(),
+            'as' => "{$this->resourceType}.",
+            'prefix' => $prefix,
+        ];
     }
 
     /**
-     * Add the index method.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return IlluminateRoute
+     * @return array
      */
-    protected function addResourceIndex(string $resourceType, string $controller, array $options): IlluminateRoute
+    private function middleware(): array
     {
-        $uri = $this->getResourceUri($resourceType);
-        $action = $this->getResourceAction($resourceType, $controller, 'index', null, $options);
-
-        $route = $this->router->get($uri, $action);
-        $route->defaults(Route::RESOURCE_TYPE, $resourceType);
-
-        return $route;
+        return collect($this->contentNegotiation())
+            ->merge($this->options['middleware'] ?? [])
+            ->all();
     }
 
     /**
-     * Add the store method.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return IlluminateRoute
+     * @return array
      */
-    protected function addResourceStore(string $resourceType, string $controller, array $options): IlluminateRoute
+    private function resourceActions(): array
     {
-        $uri = $this->getResourceUri($resourceType);
-        $action = $this->getResourceAction($resourceType, $controller, 'store', null, $options);
-
-        $route = $this->router->post($uri, $action);
-        $route->defaults(Route::RESOURCE_TYPE, $resourceType);
-
-        return $route;
+        return $this->diffActions(['index', 'create', 'read', 'update', 'delete'], $this->options);
     }
 
     /**
-     * Add the read method.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return IlluminateRoute
+     * @return bool
      */
-    protected function addResourceShow(string $resourceType, string $controller, array $options): IlluminateRoute
+    private function hasAsync(): bool
     {
-        $parameter = $this->getResourceParameterName($resourceType, $options);
-        $uri = $this->getResourceUri($resourceType);
-        $action = $this->getResourceAction($resourceType, $controller, 'show', $parameter, $options);
-
-        $route = $this->router->get(sprintf('%s/{%s}', $uri, $parameter), $action);
-        $route->defaults(Route::RESOURCE_TYPE, $resourceType);
-        $route->defaults(Route::RESOURCE_ID_NAME, $parameter);
-
-        return $route;
+        return $this->options['async'] ?? false;
     }
 
     /**
-     * Add the update method.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return IlluminateRoute
-     */
-    protected function addResourceUpdate(string $resourceType, string $controller, array $options): IlluminateRoute
-    {
-        $parameter = $this->getResourceParameterName($resourceType, $options);
-        $uri = $this->getResourceUri($resourceType);
-        $action = $this->getResourceAction($resourceType, $controller, 'update', $parameter, $options);
-
-        $route = $this->router->patch(sprintf('%s/{%s}', $uri, $parameter), $action);
-        $route->defaults(Route::RESOURCE_TYPE, $resourceType);
-        $route->defaults(Route::RESOURCE_ID_NAME, $parameter);
-
-        return $route;
-    }
-
-    /**
-     * Add the destroy method.
-     *
-     * @param string $resourceType
-     * @param string $controller
-     * @param array $options
-     * @return IlluminateRoute
-     */
-    protected function addResourceDestroy(string $resourceType, string $controller, array $options): IlluminateRoute
-    {
-        $parameter = $this->getResourceParameterName($resourceType, $options);
-        $uri = $this->getResourceUri($resourceType);
-        $action = $this->getResourceAction($resourceType, $controller, 'destroy', $parameter, $options);
-
-        $route = $this->router->delete(sprintf('%s/{%s}', $uri, $parameter), $action);
-        $route->defaults(Route::RESOURCE_TYPE, $resourceType);
-        $route->defaults(Route::RESOURCE_ID_NAME, $parameter);
-
-        return $route;
-    }
-
-    /**
-     * @param string $resourceType
      * @return string
      */
-    private function getResourceUri(string $resourceType): string
+    private function baseProcessUrl(): string
     {
-        return $this->server
-            ->schemas()
-            ->schemaFor($resourceType)
-            ->uriType();
+        return '/' . $this->processType();
     }
 
     /**
-     * Get the action array for a resource route.
-     *
-     * @param string $resourceType
-     * @param string $controller
+     * @return string
+     */
+    private function processUrl(): string
+    {
+        return $this->baseProcessUrl() . '/' . $this->processIdParameter();
+    }
+
+    /**
+     * @return string
+     */
+    private function processIdParameter(): string
+    {
+        return '{' . ResourceRegistrar::PARAM_PROCESS_ID . '}';
+    }
+
+    /**
+     * @return string
+     */
+    private function processType(): string
+    {
+        return $this->options['processes'] ?? ResourceRegistrar::KEYWORD_PROCESSES;
+    }
+
+    /**
+     * @param string $uri
+     * @return string|null
+     */
+    private function idConstraintForProcess(string $uri): ?string
+    {
+        if (!Str::contains($uri, $this->processIdParameter())) {
+            return null;
+        }
+
+        return $this->options['async_id'] ?? Uuid::VALID_PATTERN;
+    }
+
+    /**
      * @param string $method
-     * @param string|null $parameter
-     * @param array $options
-     * @return array
+     * @param string $uri
+     * @param array $action
+     * @return Route
      */
-    private function getResourceAction(
-        string $resourceType,
-        string $controller,
-        string $method,
-        ?string $parameter,
-        array $options
-    ) {
-        $name = $this->getResourceRouteName($resourceType, $method, $options);
-
-        $action = ['as' => $name, 'uses' => $controller.'@'.$method];
-
-        if (isset($options['middleware'])) {
-            $action['middleware'] = $options['middleware'];
-        }
-
-        if (isset($options['excluded_middleware'])) {
-            $action['excluded_middleware'] = $options['excluded_middleware'];
-        }
-
-        $action['where'] = $this->getWheres($resourceType, $parameter, $options);
-
-        return $action;
-    }
-
-    /**
-     * Get the action array for the relationships group.
-     *
-     * @param string $resourceType
-     * @param string|null $parameter
-     * @param array $options
-     * @return array
-     */
-    private function getRelationshipsAction(string $resourceType, ?string $parameter, array $options)
+    private function routeForProcess(string $method, string $uri, array $action): Route
     {
-        $uri = $this->getResourceUri($resourceType);
+        /** @var Route $route */
+        $route = $this->router->{$method}($uri, $action);
+        $route->defaults(ResourceRegistrar::PARAM_RESOURCE_TYPE, $this->resourceType);
+        $route->defaults(ResourceRegistrar::PARAM_PROCESS_TYPE, $this->processType());
 
-        $action = [
-            'prefix' => sprintf('%s/{%s}', $uri, $parameter),
-            'as' => "{$resourceType}.",
-        ];
-
-        if (isset($options['middleware'])) {
-            $action['middleware'] = $options['middleware'];
+        if ($constraint = $this->idConstraintForProcess($uri)) {
+            $route->where(ResourceRegistrar::PARAM_PROCESS_ID, $constraint);
         }
 
-        if (isset($options['excluded_middleware'])) {
-            $action['excluded_middleware'] = $options['excluded_middleware'];
-        }
-
-        $action['where'] = $this->getWheres($resourceType, $parameter, $options);
-
-        return $action;
+        return $route;
     }
 
     /**
-     * Get the action array for custom the actions group.
-     *
-     * @param string $resourceType
-     * @param array $options
-     * @return array
+     * @param string $action
+     * @return Route
      */
-    private function getCustomActions(string $resourceType, array $options)
+    private function routeForResource(string $action): Route
     {
-        $action = [
-            'prefix' => $this->getResourceUri($resourceType),
-            'as' => "{$resourceType}.",
-        ];
-
-        if (isset($options['middleware'])) {
-            $action['middleware'] = $options['middleware'];
-        }
-
-        if (isset($options['excluded_middleware'])) {
-            $action['excluded_middleware'] = $options['excluded_middleware'];
-        }
-
-        return $action;
+        return $this->createRoute(
+            $this->methodForAction($action),
+            $this->urlForAction($action),
+            $this->actionForRoute($action)
+        );
     }
 
     /**
-     * @param string $resourceType
+     * @param string $action
      * @return string
      */
-    private function getIdPattern(string $resourceType): string
+    private function urlForAction(string $action): string
     {
-        return $this->server
-            ->schemas()
-            ->schemaFor($resourceType)
-            ->id()
-            ->pattern();
+        if (in_array($action, ['index', 'create'], true)) {
+            return $this->baseUrl();
+        }
+
+        return $this->resourceUrl();
     }
 
     /**
-     * Get the route name.
-     *
-     * @param string $resourceType
-     * @param string $method
-     * @param array $options
+     * @param string $action
      * @return string
      */
-    protected function getResourceRouteName(string $resourceType, string $method, array $options): string
+    private function methodForAction(string $action): string
     {
-        $custom = $options['names'] ?? [];
-
-        return $custom[$method] ?? "{$resourceType}.{$method}";
+        return self::METHODS[$action];
     }
 
     /**
-     * Get the applicable resource methods.
-     *
-     * @param  array  $options
+     * @param string $action
      * @return array
      */
-    private function getResourceMethods(array $options): array
+    private function actionForRoute(string $action): array
     {
-        $methods = [
-            'index',
-            'store',
-            'show',
-            'update',
-            'destroy',
+        return [
+            'uses' => $this->controllerAction($action),
+            'as' => $action,
         ];
-
-        if (isset($options['only'])) {
-            $methods = array_intersect($methods, (array) $options['only']);
-        }
-
-        if (isset($options['except'])) {
-            $methods = array_diff($methods, (array) $options['except']);
-        }
-
-        return $methods;
     }
 
     /**
-     * Guess the controller name from the resource type.
-     *
-     * @param string $resourceType
+     * @param string $action
      * @return string
      */
-    private function guessController(string $resourceType): string
+    private function controllerAction(string $action): string
     {
-        return Str::classify(Str::singular($resourceType)) . 'Controller';
+        return sprintf('%s@%s', $this->controller(), $action);
     }
 }

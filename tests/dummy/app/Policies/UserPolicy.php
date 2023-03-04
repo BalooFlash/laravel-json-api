@@ -15,47 +15,28 @@
  * limitations under the License.
  */
 
-declare(strict_types=1);
+namespace DummyApp\Policies;
 
-namespace App\Policies;
-
-use App\Models\User;
+use DummyApp\User;
 
 class UserPolicy
 {
+
     /**
-     * Determine if the user can view the other user.
-     *
      * @param User $user
-     * @param User $other
      * @return bool
      */
-    public function view(User $user, User $other): bool
+    public function author(User $user)
     {
-        return true;
+        return $user->author;
     }
 
     /**
-     * Determine if the user can view the other user's phone.
-     *
      * @param User $user
-     * @param User $other
      * @return bool
      */
-    public function viewPhone(User $user, User $other): bool
+    public function admin(User $user)
     {
-        return $user->is($other);
-    }
-
-    /**
-     * Determine if the user can update the other user's phone.
-     *
-     * @param User $user
-     * @param User $other
-     * @return bool
-     */
-    public function updatePhone(User $user, User $other): bool
-    {
-        return $user->is($other);
+        return $user->admin;
     }
 }

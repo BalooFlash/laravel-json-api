@@ -15,7 +15,7 @@
  * limitations under the License.
  */
 
-namespace App\Providers;
+namespace DummyApp\Providers;
 
 use Illuminate\Foundation\Support\Providers\RouteServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Route;
@@ -29,14 +29,7 @@ class RouteServiceProvider extends ServiceProvider
      *
      * @var string
      */
-    protected $namespace = 'App\Http\Controllers';
-
-    /**
-     * The path to the "home" route for your application.
-     *
-     * @var string
-     */
-    public const HOME = '/home';
+    protected $namespace = 'DummyApp\Http\Controllers';
 
     /**
      * Define your route model bindings, pattern filters, etc.
@@ -58,10 +51,6 @@ class RouteServiceProvider extends ServiceProvider
     public function map()
     {
         $this->mapApiRoutes();
-
-        $this->mapWebRoutes();
-
-        //
     }
 
     /**
@@ -87,8 +76,7 @@ class RouteServiceProvider extends ServiceProvider
      */
     protected function mapApiRoutes()
     {
-        Route::prefix('api')
-            ->middleware('api')
+        Route::middleware('api')
             ->namespace($this->namespace)
             ->group(__DIR__ . '/../../routes/api.php');
     }

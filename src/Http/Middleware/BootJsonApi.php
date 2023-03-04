@@ -17,17 +17,23 @@
 
 declare(strict_types=1);
 
-namespace LaravelJsonApi\Laravel\Http\Middleware;
+namespace CloudCreativity\LaravelJsonApi\Http\Middleware;
 
 use Closure;
-use Illuminate\Container\Container;
+use CloudCreativity\LaravelJsonApi\Api\Api;
+use CloudCreativity\LaravelJsonApi\Api\Repository;
+use CloudCreativity\LaravelJsonApi\Contracts\Http\Query\QueryParametersInterface;
+use CloudCreativity\LaravelJsonApi\Exceptions\ResourceNotFoundException;
+use CloudCreativity\LaravelJsonApi\Routing\Route;
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Http\Request;
-use LaravelJsonApi\Contracts\Routing\Route as RouteContract;
-use LaravelJsonApi\Contracts\Server\Repository;
-use LaravelJsonApi\Contracts\Server\Server;
-use LaravelJsonApi\Eloquent\Pagination\PagePagination;
-use LaravelJsonApi\Laravel\Routing\Route;
+use Illuminate\Pagination\AbstractPaginator;
 
+/**
+ * Class BootJsonApi
+ *
+ * @package CloudCreativity\LaravelJsonApi
+ */
 class BootJsonApi
 {
 
@@ -37,82 +43,91 @@ class BootJsonApi
     private Container $container;
 
     /**
-     * @var Repository
-     */
-    private Repository $servers;
-
-    /**
-     * BootJsonApi constructor.
-     *
      * @param Container $container
-     * @param Repository $servers
      */
-    public function __construct(Container $container, Repository $servers)
+    public function __construct(Container $container)
     {
         $this->container = $container;
-        $this->servers = $servers;
     }
 
     /**
-     * Handle the request.
+     * Start JSON API support.
+     *
+     * This middleware:
+     *
+     * - Loads the configuration for the named API that this request is being routed to.
+     * - Registers the API in the service container.
+     * - Substitutes bindings on the route.
+     * - Overrides the Laravel current page resolver so that it uses the JSON API page parameter.
      *
      * @param Request $request
      * @param Closure $next
-     * @param string $name
+     * @param string $namespace
+     *      the API namespace, as per your JSON API configuration.
      * @return mixed
      */
-    public function handle($request, Closure $next, string $name)
+    public function handle($request, Closure $next, string $namespace)
     {
-        /**
-         * When handling an HTTP request, both the JSON:API server and
-         * request classes can be singletons bound into the container.
-         * (The middleware will remove these instances from the container
-         * once the HTTP request is terminated.)
-         */
-        $this->container->instance(
-            Server::class,
-            $server = $this->servers->server($name)
+        /** Build and register the API. */
+        $api = $this->bindApi(
+            $namespace,
+            $request->getSchemeAndHttpHost() . $request->getBaseUrl(),
+            $request->route()->parameters
         );
 
-        $this->container->instance(
-            RouteContract::class,
-            $route = new Route($this->container, $server, $request->route())
-        );
+        /** Substitute route bindings. */
+        $this->substituteBindings($api);
 
-        /**
-         * Before we do anything, we must ensure the server is set up to
-         * handle an HTTP request. We do that by invoking the `serving()`
-         * hook on the server instance.
-         */
-        if (method_exists($server, 'serving')) {
-            $this->container->call([$server, 'serving']);
-        }
-
-        /**
-         * Once the server is set up, we can substitute bindings. This must
-         * happen after the `serving` hook, in case that hook has added any
-         * Eloquent scopes.
-         */
-        $route->substituteBindings();
-
-        /**
-         * We will also override the Laravel page resolver, as we know this is
-         * a JSON:API request, and the specification would have the page number
-         * nested under the `page` query parameter.
-         */
-        PagePagination::bindPageResolver();
+        /** Set up the Laravel paginator to read from JSON API request instead */
+        $this->bindPageResolver();
 
         return $next($request);
     }
 
     /**
-     * Handle tasks after the response has been sent.
+     * Build the API instance and bind it into the container.
+     *
+     * @param string $namespace
+     * @param string $host
+     * @param array $parameters
+     * @return Api
+     */
+    protected function bindApi(string $namespace, string $host, array $parameters = []): Api
+    {
+        /** @var Repository $repository */
+        $repository = $this->container->make(Repository::class);
+
+        $api = $repository->createApi($namespace, $host, $parameters);
+        $this->container->instance(Api::class, $api);
+        $this->container->alias(Api::class, 'json-api.inbound');
+
+        return $api;
+    }
+
+    /**
+     * @param Api $api
+     * @throws ResourceNotFoundException
+     */
+    protected function substituteBindings(Api $api): void
+    {
+        /** @var Route $route */
+        $route = $this->container->make(Route::class);
+        $route->substituteBindings($api->getStore());
+    }
+
+    /**
+     * Override the page resolver to read the page parameter from the JSON API request.
      *
      * @return void
      */
-    public function terminate(): void
+    protected function bindPageResolver(): void
     {
-        $this->container->forgetInstance(Server::class);
-        $this->container->forgetInstance(RouteContract::class);
+        /** Override the current page resolution */
+        AbstractPaginator::currentPageResolver(function ($pageName) {
+            $pagination = app(QueryParametersInterface::class)->getPaginationParameters() ?: [];
+
+            return $pagination[$pageName] ?? null;
+        });
     }
+
 }

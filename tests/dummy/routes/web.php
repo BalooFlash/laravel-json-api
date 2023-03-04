@@ -15,4 +15,6 @@
  * limitations under the License.
  */
 
+use Illuminate\Support\Facades\Auth;
 
+Auth::routes();

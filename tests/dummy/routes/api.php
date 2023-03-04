@@ -15,32 +15,59 @@
  * limitations under the License.
  */
 
-use LaravelJsonApi\Laravel\Facades\JsonApiRoute;
+use CloudCreativity\LaravelJsonApi\Facades\JsonApi;
+use CloudCreativity\LaravelJsonApi\Routing\RouteRegistrar;
 
-JsonApiRoute::server('v1')
-    ->prefix('v1')
-    ->namespace('Api\V1')
-    ->resources(function ($server) {
-        /** Posts */
-        $server->resource('posts')->relationships(function ($relationships) {
-            $relationships->hasOne('author')->readOnly();
-            $relationships->hasMany('comments')->readOnly();
-            $relationships->hasMany('media');
-            $relationships->hasMany('tags');
-        })->actions('-actions', function ($actions) {
-            $actions->delete('purge');
-            $actions->withId()->post('publish');
-        });
+JsonApi::register('v1', [], function (RouteRegistrar $api) {
 
-        /** Users */
-        $server->resource('users')->only('show')->relationships(function ($relationships) {
-            $relationships->hasOne('phone');
-        })->actions(function ($actions) {
-            $actions->get('me');
-        });
+    $api->resource('avatars', ['controller' => true]);
 
-        /** Videos */
-        $server->resource('videos')->relationships(function ($relationships) {
-            $relationships->hasMany('tags');
-        });
-    });
+    $api->resource('comments', [
+        'controller' => true,
+        'middleware' => 'auth',
+        'has-one' => 'commentable',
+    ]);
+
+    $api->resource('countries', [
+        'has-many' => ['users', 'posts'],
+    ]);
+
+
+    $api->resource('downloads', [
+        'async' => true,
+    ]);
+
+    $api->resource('posts', [
+        'has-one' => [
+            'author' => ['inverse' => 'users'],
+            'image',
+        ],
+        'has-many' => [
+            'comments',
+            'tags',
+            'related' => ['only' => ['read', 'related']],
+            'related-video' => ['only' => ['read', 'related']],
+        ],
+    ]);
+
+    $api->resource('users', [
+        'has-one' => 'phone',
+        'has-many' => 'roles',
+    ]);
+
+    $api->resource('videos');
+
+    $api->resource('tags', [
+        'has-many' => 'taggables',
+    ]);
+
+    $api->resource('sites', [
+        'controller' => true,
+    ]);
+
+    $api->resource('suppliers', [
+        'has-one' => [
+            'user-history' => ['only' => ['read', 'related']],
+        ],
+    ]);
+});

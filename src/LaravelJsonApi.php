@@ -15,166 +15,83 @@
  * limitations under the License.
  */
 
-declare(strict_types=1);
+namespace CloudCreativity\LaravelJsonApi;
 
-namespace LaravelJsonApi\Laravel;
-
-use Illuminate\Support\Arr;
-use InvalidArgumentException;
-use LaravelJsonApi\Core\Auth\AuthorizerResolver;
-use LaravelJsonApi\Core\Query\Custom\ExtendedQueryParameters;
-use LaravelJsonApi\Core\Resources\ResourceResolver;
-use LaravelJsonApi\Eloquent\Resources\Relation;
-use LaravelJsonApi\Laravel\Http\Requests\RequestResolver;
-
-final class LaravelJsonApi
+class LaravelJsonApi
 {
 
     /**
-     * Register an authorizer for a resource type or types.
+     * The default API name.
      *
-     * @param string $authorizerClass
-     * @param string|string[] $schemaClasses
+     * @var null
+     */
+    public static $defaultApi = 'default';
+
+    /**
+     * Indicates if Laravel JSON API migrations will be run.
+     *
+     * @var bool
+     */
+    public static $runMigrations = false;
+
+    /**
+     * Indicates if listeners will be bound to the Laravel queue events.
+     *
+     * @var bool
+     */
+    public static $queueBindings = true;
+
+    /**
+     * Indicates if Laravel validator failed data is added to JSON API error objects.
+     *
+     * @var bool
+     */
+    public static $validationFailures = false;
+
+    /**
+     * Set the default API name.
+     *
+     * @param string $name
      * @return LaravelJsonApi
      */
-    public static function registerAuthorizer(string $authorizerClass, $schemaClasses): self
+    public static function defaultApi(string $name): self
     {
-        foreach (Arr::wrap($schemaClasses) as $schemaClass) {
-            AuthorizerResolver::register($schemaClass, $authorizerClass);
+        if (empty($name)) {
+            throw new \InvalidArgumentException('Default API name must not be empty.');
         }
+
+        self::$defaultApi = $name;
 
         return new self();
     }
 
     /**
-     * Set the default authorizer implementation.
-     *
-     * @param string $authorizerClass
      * @return LaravelJsonApi
      */
-    public static function defaultAuthorizer(string $authorizerClass): self
+    public static function runMigrations(): self
     {
-        AuthorizerResolver::useDefault($authorizerClass);
+        self::$runMigrations = true;
 
         return new self();
     }
 
     /**
-     * Set the default resource class.
-     *
-     * @param string $resourceClass
      * @return LaravelJsonApi
      */
-    public static function defaultResource(string $resourceClass): self
+    public static function skipQueueBindings(): self
     {
-        ResourceResolver::useDefault($resourceClass);
+        self::$queueBindings = false;
 
         return new self();
     }
 
     /**
-     * Register a HTTP query class for the supplied resource type or types.
-     *
-     * @param string $queryClass
-     * @param $resourceTypes
-     * @return $this
+     * @return LaravelJsonApi
      */
-    public static function registerQuery(string $queryClass, $resourceTypes): self
+    public static function showValidatorFailures(): self
     {
-        foreach (Arr::wrap($resourceTypes) as $resourceType) {
-            RequestResolver::register(RequestResolver::QUERY, $resourceType, $queryClass);
-        }
+        self::$validationFailures = true;
 
         return new self();
-    }
-
-    /**
-     * Set the default query class implementation.
-     *
-     * @param string $queryClass
-     * @return static
-     */
-    public static function defaultQuery(string $queryClass): self
-    {
-        RequestResolver::useDefault(RequestResolver::QUERY, $queryClass);
-
-        return new self();
-    }
-
-    /**
-     * Register a HTTP collection query class for the supplied resource type or types.
-     *
-     * @param string $queryClass
-     * @param $resourceTypes
-     * @return $this
-     */
-    public static function registerCollectionQuery(string $queryClass, $resourceTypes): self
-    {
-        foreach (Arr::wrap($resourceTypes) as $resourceType) {
-            RequestResolver::register(RequestResolver::COLLECTION_QUERY, $resourceType, $queryClass);
-        }
-
-        return new self();
-    }
-
-    /**
-     * Set the default collection query class implementation.
-     *
-     * @param string $queryClass
-     * @return static
-     */
-    public static function defaultCollectionQuery(string $queryClass): self
-    {
-        RequestResolver::useDefault(RequestResolver::COLLECTION_QUERY, $queryClass);
-
-        return new self();
-    }
-
-    /**
-     * Register a HTTP request class for the supplied resource type or types.
-     *
-     * @param string $queryClass
-     * @param $resourceTypes
-     * @return $this
-     */
-    public static function registerRequest(string $queryClass, $resourceTypes): self
-    {
-        foreach (Arr::wrap($resourceTypes) as $resourceType) {
-            RequestResolver::register(RequestResolver::REQUEST, $resourceType, $queryClass);
-        }
-
-        return new self();
-    }
-
-    /**
-     * Set the query parameter name for the countable implementation.
-     *
-     * @param string $parameter
-     * @return static
-     */
-    public static function withCountQueryParameter(string $parameter): self
-    {
-        if (!empty($parameter)) {
-            ExtendedQueryParameters::withCount($parameter);
-            return new self();
-        }
-
-        throw new InvalidArgumentException('Expecting a non-empty string for the countable query parameter.');
-    }
-
-    /**
-     * Set the relationship meta key for the countable implementation.
-     *
-     * @param string $key
-     * @return static
-     */
-    public static function withCountMetaKey(string $key): self
-    {
-        if (!empty($key)) {
-            Relation::withCount($key);
-            return new self();
-        }
-
-        throw new InvalidArgumentException('Expecting a non-empty string for the countable meta key.');
     }
 }

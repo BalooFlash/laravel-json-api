@@ -1,0 +1,77 @@
+<?php
+
+namespace DummyNamespace;
+
+use CloudCreativity\LaravelJsonApi\Adapter\AbstractResourceAdapter;
+use CloudCreativity\LaravelJsonApi\Contracts\Http\Query\QueryParametersInterface;
+use CloudCreativity\LaravelJsonApi\Document\ResourceObject;
+use Illuminate\Support\Collection;
+
+class DummyClass extends AbstractResourceAdapter
+{
+
+    /**
+     * @inheritDoc
+     */
+    protected function createRecord(ResourceObject $resource)
+    {
+        // TODO: Implement createRecord() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function fillAttributes($record, Collection $attributes)
+    {
+        // TODO: Implement fillAttributes() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function persist($record)
+    {
+        // TODO: Implement persist() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    protected function destroy($record)
+    {
+        // TODO: Implement destroy() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function query(QueryParametersInterface $parameters)
+    {
+        // TODO: Implement query() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function exists(string $resourceId): bool
+    {
+        // TODO: Implement exists() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function find($resourceId)
+    {
+        // TODO: Implement find() method.
+    }
+
+    /**
+     * @inheritDoc
+     */
+    public function findMany(iterable $resourceIds): iterable
+    {
+        // TODO: Implement findMany() method.
+    }
+
+}

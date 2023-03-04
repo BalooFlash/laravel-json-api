@@ -1,0 +1,37 @@
+<?php
+
+namespace DummyNamespace;
+
+use CloudCreativity\LaravelJsonApi\Schema\SchemaProvider;
+
+class DummyClass extends SchemaProvider
+{
+
+    /**
+     * @var string
+     */
+    protected $resourceType = 'dummyResourceType';
+
+    /**
+     * @param \DummyModelNamespace\DummyRecord $resource
+     *      the domain record being serialized.
+     * @return string
+     */
+    public function getId($resource)
+    {
+        return (string) $resource->getRouteKey();
+    }
+
+    /**
+     * @param \DummyModelNamespace\DummyRecord $resource
+     *      the domain record being serialized.
+     * @return array
+     */
+    public function getAttributes($resource)
+    {
+        return [
+            'createdAt' => $resource->created_at,
+            'updatedAt' => $resource->updated_at,
+        ];
+    }
+}
